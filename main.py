@@ -21,6 +21,7 @@ async def endpoint_post():
     return {"http_method": "post"}
 
 
+# webhook
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     req_body = await request.json()
