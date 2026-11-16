@@ -1,10 +1,28 @@
-# import src.python_english_mentor.app_cli as app
-import src.python_english_mentor.app as app
+from loguru import logger
+from fastapi import FastAPI, Request, Response, status
+
+app = FastAPI()
 
 
-def main():
-    app.run()
+# /
+@app.get("/")
+async def root():
+    return {"status": "it's coming from root"}  # JSON
 
 
-if __name__ == "__main__":
-    main()
+@app.get("/get")
+async def endpoint_get():
+    return {"http_method": "get"}
+
+
+# http request -> get dan post
+@app.post("/post")
+async def endpoint_post():
+    return {"http_method": "post"}
+
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    req_body = await request.json()
+    logger.debug(req_body)
+    return Response(status_code=status.HTTP_200_OK)
