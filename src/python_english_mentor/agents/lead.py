@@ -8,9 +8,13 @@ from src.python_english_mentor.repository.chat_repository import ChatRepository
 from google.genai import types
 from loguru import logger
 
+MAX_HISTORY_ITEMS = 10
+
 
 class LeadAgent:  # orchestrator
-    def __init__(self):
+    def __init__(self, user_id):
+        self.user_id = user_id
+
         # gemini
         self.gemini_client = llm.get_gemini_client()
 
@@ -45,15 +49,27 @@ class LeadAgent:  # orchestrator
             for row in response.data
         ]
 
-    def start_or_resume():
-        pass
+    def start_or_resume(self, init_history=None):
+        if init_history:
+            self.history = init_history
 
-    def handle_send_message(self, user_id: int, message_text: str):
+        if len(self.history) > MAX_HISTORY_ITEMS:
+            self.history = self.history[-MAX_HISTORY_ITEMS:]
+
+        self.chat_model = self.gemini_client.chats.create(
+            model=env.GEMINI_MODEL,
+            config=types.GenerateContentConfig(
+                system_instruction=self.lead_agent_instruction, tools=self.tools
+            ),
+            history=self.history,
+        )
+
+    def handle_send_message(self, message_text: str):
         if not self.chat_model:
-            self.start_or_resume(init_history=self._load_history(user_id=user_id))
+            self.start_or_resume(init_history=self._load_history(user_id=self.user_id))
 
         self.chat_repository.save_message(
-            user_id=user_id, role="user", message_text=message_text
+            user_id=self.user_id, role="user", message_text=message_text
         )
 
         response_token_count = self.gemini_client.models.count_tokens(
@@ -73,11 +89,11 @@ class LeadAgent:  # orchestrator
         # handle artifact
         for item in artifacts_data:
             self.chat_repository.save_artifact(
-                user_id=user_id, artifact_path=item["path"]
+                user_id=self.user_id, artifact_path=item["path"]
             )
 
         self.chat_repository.save_message(
-            role="model", user_id=user_id, message_text=answer
+            role="model", user_id=self.user_id, message_text=answer
         )
 
         # collected_artifacts = self.chat_repository.get_last_artifact_by_user_id(
@@ -86,9 +102,9 @@ class LeadAgent:  # orchestrator
 
         return {"text": answer, "artifacts": artifacts_data}
 
-    def handle_send_voice(self, user_id: int, voice_file_path: str):
+    def handle_send_voice(self, voice_file_path: str):
         self.chat_repository.save_message(
-            user_id=user_id, role="user", message_text="[voice note]"
+            user_id=self.user_id, role="user", message_text="[voice note]"
         )
 
         evaluation_speaking_result = services.evaluate_speaking(
@@ -96,22 +112,20 @@ class LeadAgent:  # orchestrator
         )
 
         self.chat_repository.save_message(
-            user_id=user_id, role="model", message_text=evaluation_speaking_result
+            user_id=self.user_id, role="model", message_text=evaluation_speaking_result
         )
 
         return evaluation_speaking_result
 
-    def handle_report(
-        self, user_id: int, username: str, start_date: str, end_date: str
-    ):
+    def handle_report(self, username: str, start_date: str, end_date: str):
 
         self.chat_repository.save_message(
-            user_id=user_id,
+            user_id=self.user_id,
             role="user",
             message_text=f"[generate learning report]: {start_date} - {end_date}",
         )
 
-        history = self._load_history(user_id=user_id)
+        history = self._load_history(user_id=self.user_id)
 
         report_file_path = services.generate_report(
             conversation_history=history,
@@ -121,7 +135,7 @@ class LeadAgent:  # orchestrator
         )
 
         self.chat_repository.save_message(
-            user_id=user_id,
+            user_id=self.user_id,
             role="model",
             message_text=f"[generate learning report: {start_date} - {end_date} sudah selesai dicetak]",
         )
