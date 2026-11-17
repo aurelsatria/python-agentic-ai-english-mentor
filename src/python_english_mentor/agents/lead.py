@@ -6,6 +6,7 @@ import src.python_english_mentor.core.artifacts as artifacts
 
 from src.python_english_mentor.repository.chat_repository import ChatRepository
 from google.genai import types
+from loguru import logger
 
 
 class LeadAgent:  # orchestrator
@@ -26,6 +27,10 @@ class LeadAgent:  # orchestrator
         # lead agent instruction
         self.lead_agent_instruction = prompts.load_instruction("agent-lead")
 
+        self.chat_model = None
+
+        self.history = []
+
     # pythonic way: nama function dengan awalan _ akan dipanggil secara private (hanya di class LeadAgent saja)
     def _load_history(self, user_id: int):
         """Mengambil history chat dari supabase kemudian diubah ke format Gemini"""
@@ -40,23 +45,27 @@ class LeadAgent:  # orchestrator
             for row in response.data
         ]
 
+    def start_or_resume():
+        pass
+
     def handle_send_message(self, user_id: int, message_text: str):
+        if not self.chat_model:
+            self.start_or_resume(init_history=self._load_history(user_id=user_id))
+
         self.chat_repository.save_message(
             user_id=user_id, role="user", message_text=message_text
         )
 
-        contents = self._load_history(user_id=user_id)
+        response_token_count = self.gemini_client.models.count_tokens(
+            model=env.GEMINI_MODEL, contents=message_text
+        )
+
+        logger.debug(f"total tokens: {response_token_count.total_tokens}")
 
         # siapkan keranjang artifact untuk setiap request
         artifacts.start()
 
-        response = self.gemini_client.models.generate_content(
-            model=env.GEMINI_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=self.lead_agent_instruction, tools=self.tools
-            ),
-            contents=contents,
-        )
+        response = self.chat_model.send_message(message_text)
 
         answer = response.text
         artifacts_data = artifacts.collect()
