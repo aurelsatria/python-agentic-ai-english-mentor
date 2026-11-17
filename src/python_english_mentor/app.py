@@ -1,11 +1,12 @@
 import src.python_english_mentor.core.env as env
+import src.python_english_mentor.core.supabase as supabase
 
 import os
 import random
 
 from zoneinfo import ZoneInfo  # WIB - Asia/Jakarta
 
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.error import BadRequest
 from telegram.ext import (
     ContextTypes,
@@ -32,6 +33,8 @@ lead_agent = LeadAgent()
 
 # python-telegram-bot config
 bot_config = Defaults(parse_mode=ParseMode.MARKDOWN_V2, tzinfo=timezone)
+
+supabase_client = supabase.get_supabase_client()
 
 
 async def start_command(update: Update, context=ContextTypes.DEFAULT_TYPE):
@@ -71,13 +74,19 @@ async def report_command(update: Update, context=ContextTypes.DEFAULT_TYPE):
         user_id=user_id, username=username, start_date=start_date, end_date=end_date
     )
 
-    with open(report_file_path, "rb") as report_pdf:
-        await update.message.reply_document(
-            document=report_pdf,
-            caption=to_telegram_markdown(
-                f"Laporan belajar Bahasa Inggris dari tanggal {start_date.isoformat()} - {end_date.isoformat()}"
-            ),
-        )
+    # ambil (download) laporan belajar dari supabase storage
+    result_download = supabase_client.storage.from_("artifacts").download(
+        report_file_path
+    )
+
+    report_file_pdf = InputFile(result_download, filename="learning-report.pdf")
+
+    await update.message.reply_document(
+        document=report_file_pdf,
+        caption=to_telegram_markdown(
+            f"Laporan belajar Bahasa Inggris dari tanggal {start_date.isoformat()} - {end_date.isoformat()}"
+        ),
+    )
 
 
 async def _send_artifact(update: Update, artifact: Artifact):
@@ -87,20 +96,16 @@ async def _send_artifact(update: Update, artifact: Artifact):
 
     safe_caption_text = to_telegram_markdown(caption)
 
-    if not os.path.exists(artifact_path):
-        logger.warning(f"artifact tidak ditemukan")
+    result_download = supabase_client.storage.from_("artifacts").download(artifact_path)
 
-    with open(artifact_path, "rb") as artifact_file:
-        if kind == "audio":
-            await update.message.reply_audio(
-                audio=artifact_file, caption=safe_caption_text
-            )
-        else:
-            await update.message.reply_document(
-                document=artifact_file, caption=safe_caption_text
-            )
+    artifact_file = InputFile(result_download, filename=artifact_path)
 
-    os.remove(artifact_path)
+    if kind == "audio":
+        await update.message.reply_audio(audio=artifact_file, caption=safe_caption_text)
+    else:
+        await update.message.reply_document(
+            document=artifact_file, caption=safe_caption_text
+        )
 
 
 async def handle_text(update: Update, context=ContextTypes.DEFAULT_TYPE):
